@@ -3,7 +3,7 @@
 Keyboard-only window motions for [Omarchy](https://omarchy.org), so you never
 reach for the mouse to change focus.
 
-![Window hints: letters on every window, other workspaces as mini-maps](preview.png)
+![Window hints: a card with letter, app and title on every window, all workspaces along the bottom, and a move command being typed](preview.png)
 
 ## Window hints
 
