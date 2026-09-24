@@ -43,8 +43,14 @@ function shortTitle(title, app) {
   return t
 }
 
+// A finite number, or the fallback for anything else (strings, NaN, null...).
+function numberOr(v, fallback) {
+  return typeof v === "number" && isFinite(v) ? v : fallback
+}
+
 function isArray2(v) {
   return Array.isArray(v) && v.length >= 2 && typeof v[0] === "number" && typeof v[1] === "number"
+    && isFinite(v[0]) && isFinite(v[1])
 }
 
 // Turns `hyprctl clients -j` and `hyprctl monitors -j` into hints and the
@@ -56,17 +62,19 @@ function buildHints(clientsJson, monitorsJson) {
   // misleading "everything is empty" overview.
   var monitors = parseJson(monitorsJson, null)
   var clients = parseJson(clientsJson, null)
-  if (!Array.isArray(monitors) || !Array.isArray(clients) || monitors.length === 0) return null
+  if (!Array.isArray(monitors) || !Array.isArray(clients)) return null
+  monitors = monitors.filter(function(m) { return m && typeof m === "object" && !Array.isArray(m) })
+  if (monitors.length === 0) return null
 
   var focused = monitors.find(function(m) { return m && m.focused }) || monitors[0]
   var monitorById = function(id) { return monitors.find(function(m) { return m && m.id === id }) || focused }
-  var current = focused.activeWorkspace ? focused.activeWorkspace.id : null
+  var current = focused.activeWorkspace && Number.isInteger(focused.activeWorkspace.id) ? focused.activeWorkspace.id : null
   // ponytail: in-place hints only on the focused monitor; one panel per screen if you add a second display.
-  var visible = [current, focused.specialWorkspace && focused.specialWorkspace.id ? focused.specialWorkspace.id : null]
+  var visible = [current, focused.specialWorkspace && Number.isInteger(focused.specialWorkspace.id) && focused.specialWorkspace.id !== 0 ? focused.specialWorkspace.id : null]
   var isVisible = function(c) { return visible.indexOf(c.workspace.id) !== -1 }
 
   var all = clients.filter(function(c) {
-    return c && c.mapped && !c.hidden && c.workspace && typeof c.workspace.id === "number"
+    return c && c.mapped && !c.hidden && c.workspace && Number.isInteger(c.workspace.id)
       // Addresses end up inside Lua strings sent to Hyprland; real ones are
       // always hex, so anything else is skipped rather than escaped.
       && typeof c.address === "string" && /^0x[0-9a-fA-F]+$/.test(c.address)
@@ -110,7 +118,7 @@ function buildHints(clientsJson, monitorsJson) {
       key: KEYS[i], ws: c.workspace.id, here: here, address: c.address,
       cls: String(c["class"] || ""), fullscreen: c.fullscreen || 0,
       app: appName(c["class"]), title: shortTitle(c.title, appName(c["class"])),
-      x: c.at[0] - (m.x || 0), y: c.at[1] - (m.y || 0), w: c.size[0], h: c.size[1]
+      x: c.at[0] - numberOr(m.x, 0), y: c.at[1] - numberOr(m.y, 0), w: c.size[0], h: c.size[1]
     }
     hints.push(h)
     if (here) inPlace.push(h)
@@ -124,10 +132,13 @@ function buildHints(clientsJson, monitorsJson) {
   var workspaces = Object.keys(byWs).map(function(k) { return byWs[k] }).sort(function(a, b) {
     return ((a.id < 0) - (b.id < 0)) || (a.id < 0 ? b.id - a.id : a.id - b.id)
   })
-  var scale = focused.scale > 0 ? focused.scale : 1
+  var positiveOr = function(v, fallback) { var n = numberOr(v, 0); return n > 0 ? n : fallback }
+  var scale = positiveOr(focused.scale, 1)
+  var width = positiveOr(focused.width, 1920)
+  var height = positiveOr(focused.height, 1080)
   return {
     hints: hints, inPlace: inPlace, others: others, workspaces: workspaces, current: current,
-    screenW: (focused.width || 1920) / scale, screenH: (focused.height || 1080) / scale
+    screenW: width / scale, screenH: height / scale
   }
 }
 
@@ -184,9 +195,11 @@ function parseCommand(buf) {
 // Outer width for a window taking `cols` of 12 columns, Bootstrap style.
 // o: { screenW, gapsOut, gapsIn, border } in logical pixels.
 function columnWidth(cols, o) {
-  var usable = o.screenW - o.gapsOut * 2
-  var gutter = o.gapsIn * 2
-  return Math.max(1, Math.round((usable + gutter) * cols / 12 - gutter - o.border * 2))
+  var positive = function(v, fallback) { return Math.max(0, numberOr(v, fallback)) }
+  var usable = positive(o.screenW, 1920) - positive(o.gapsOut, 0) * 2
+  var gutter = positive(o.gapsIn, 0) * 2
+  var w = Math.round((usable + gutter) * numberOr(cols, 12) / 12 - gutter - positive(o.border, 0) * 2)
+  return isFinite(w) ? Math.max(1, w) : 1
 }
 
 // Turns a parsed action into concrete windows, using the result of
