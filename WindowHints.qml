@@ -12,7 +12,8 @@ Item {
   property var shell: null
   property var manifest: null
   property bool opened: false
-  property var hints: []    // every labeled window: { key, address, cls, x, y, w, h }
+  property var hints: []    // every labeled window: { key, address, cls, fullscreen, x, y, w, h }
+  property bool maximize: false  // also make the target full width (SUPER + ALT + F) after focusing
   property var inPlace: []  // hints drawn over windows on screen
   property var others: []   // [{ name, windows: [hint] }] for workspaces not on screen
   property real screenW: 1920
@@ -26,6 +27,7 @@ Item {
   readonly property string keys: "asdfghjklqwertyuiopzxcvbnm"
 
   function open(payloadJson) {
+    try { root.maximize = JSON.parse(payloadJson || "{}").maximize === true } catch (e) { root.maximize = false }
     clients.running = true
   }
 
@@ -36,7 +38,7 @@ Item {
   function dismiss() {
     root.opened = false
     if (root.shell && typeof root.shell.hide === "function")
-      root.shell.hide((root.manifest && root.manifest.id) || "nejcc.window-hints")
+      root.shell.hide((root.manifest && root.manifest.id) || "nejcc.motions")
   }
 
   function toggle() {
@@ -60,7 +62,7 @@ Item {
 
     var hints = [], byWs = {}, wsOrder = []
     all.forEach(function(c, i) {
-      var h = { key: root.keys[i], address: c.address, cls: c.class,
+      var h = { key: root.keys[i], address: c.address, cls: c.class, fullscreen: c.fullscreen,
                 x: c.at[0] - focused.x, y: c.at[1] - focused.y, w: c.size[0], h: c.size[1] }
       hints.push(h)
       if (isVisible(c)) return
@@ -83,13 +85,18 @@ Item {
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
-  function jump(key) {
+  // Shift + letter, or opening with {"maximize": true}, also makes the window full width.
+  function jump(key, maximize) {
     var hit = root.hints.find(function(h) { return h.key === key })
     root.dismiss()
     if (!hit) return
-    // Lua dispatcher on current Hyprland, classic focuswindow on older releases.
     var target = "address:" + hit.address
-    Quickshell.execDetached(["sh", "-c", 'hyprctl dispatch "hl.dsp.focus({ window = \\"$1\\" })" >/dev/null 2>&1 || hyprctl dispatch focuswindow "$1"', "sh", target])
+    // Lua dispatcher on current Hyprland, classic dispatchers on older releases.
+    var script = 'hyprctl dispatch "hl.dsp.focus({ window = \\"$1\\" })" >/dev/null 2>&1 || hyprctl dispatch focuswindow "$1"'
+    // Only when not already full width: the dispatcher toggles.
+    if (maximize && hit.fullscreen === 0)
+      script += '; hyprctl dispatch "hl.dsp.window.fullscreen({ mode = \\"maximized\\", window = \\"$1\\" })" >/dev/null 2>&1 || hyprctl dispatch fullscreen 1'
+    Quickshell.execDetached(["sh", "-c", script, "sh", target])
   }
 
   Process {
@@ -109,7 +116,7 @@ Item {
     visible: root.opened
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
-    WlrLayershell.namespace: "nejcc.window-hints"
+    WlrLayershell.namespace: "nejcc.motions"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
     exclusionMode: ExclusionMode.Ignore
@@ -122,7 +129,7 @@ Item {
       focus: true
       Keys.onPressed: function(event) {
         event.accepted = true
-        root.jump(event.text.toLowerCase())
+        root.jump(event.text.toLowerCase(), root.maximize || (event.modifiers & Qt.ShiftModifier) !== 0)
       }
     }
 

@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "nejcc.window-hints",
-  "name": "Window hints",
+  "id": "nejcc.motions",
+  "name": "Omarchy motions",
   "version": "1.0.0",
   "author": "Nejcc",
   "license": "MIT",
-  "description": "Label every window with a key, including other workspaces; press the key to focus it",
+  "description": "Keyboard window motions: jump to any window by letter, across workspaces",
   "kinds": ["overlay"],
   "keepLoaded": true,
   "entryPoints": { "overlay": "WindowHints.qml" }
