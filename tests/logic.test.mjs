@@ -1,4 +1,4 @@
-// Unit tests for Logic.js. Run with: node --test tests/
+// Unit tests for Logic.js. Run with: node --test tests/*.test.mjs
 // Logic.js is a QML JavaScript library, so it's loaded into a sandbox with its
 // `.pragma library` line stripped. No dependencies needed.
 import { test } from "node:test"
@@ -122,6 +122,43 @@ test("buildHints: many windows stay fast", () => {
   const t0 = performance.now()
   build(clients)
   assert.ok(performance.now() - t0 < 500)
+})
+
+test("buildHints: each hint carries a readable app name and a short title", () => {
+  const r = build([win(1, [0, 0]), win(2, [0, 0], { class: "brave-browser", title: "Nejcc (Nejc) - Brave" })])
+  assert.deepEqual(plain([r.others[0].windows[0].app, r.others[0].windows[0].title]), ["Brave", "Nejcc (Nejc)"])
+})
+
+// ----------------------------------------------------------- appName/title
+
+test("appName: turns window classes into readable names", () => {
+  assert.equal(L.appName("brave-browser"), "Brave")
+  assert.equal(L.appName("com.mitchellh.ghostty"), "Ghostty")
+  assert.equal(L.appName("org.gnome.Nautilus"), "Nautilus")
+  assert.equal(L.appName("foot"), "Foot")
+  assert.equal(L.appName("google-chrome"), "Google chrome")
+  assert.equal(L.appName("signal-desktop"), "Signal")
+  for (const v of ["", null, undefined, "."]) assert.equal(L.appName(v), "")
+})
+
+test("shortTitle: drops leading status symbols", () => {
+  assert.equal(L.shortTitle("✳ Omarchy setup", "Foot"), "Omarchy setup")
+  assert.equal(L.shortTitle("◑ Grid navigation plugin", "Foot"), "Grid navigation plugin")
+  assert.equal(L.shortTitle("\uf120  nvim README.md", "Foot"), "nvim README.md") // Nerd Font icon
+  assert.equal(L.shortTitle("• notes", "Foot"), "notes")
+})
+
+test("shortTitle: drops a trailing app name but keeps other dashes", () => {
+  assert.equal(L.shortTitle("Nejcc (Nejc) - Brave", "Brave"), "Nejcc (Nejc)")
+  assert.equal(L.shortTitle("Inbox — Mozilla Firefox", "Firefox"), "Inbox — Mozilla Firefox") // not a prefix match
+  assert.equal(L.shortTitle("Inbox - Firefox Nightly", "Firefox"), "Inbox")
+  assert.equal(L.shortTitle("git log - main", "Foot"), "git log - main")
+  assert.equal(L.shortTitle("A - B - Brave", "Brave"), "A - B")
+})
+
+test("shortTitle: keeps titles that are only the app name or empty", () => {
+  assert.equal(L.shortTitle("Brave", "Brave"), "Brave")
+  for (const v of ["", null, undefined, "   "]) assert.equal(L.shortTitle(v, "Foot"), "")
 })
 
 // ------------------------------------------------------------ keyFor/payload

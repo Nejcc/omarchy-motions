@@ -10,10 +10,13 @@ reach for the mouse to change focus.
 Press a key and every window gets a letter; press the letter to focus that
 window.
 
-- Windows on screen get a big letter drawn right on top of them.
+- Windows on screen get a card right on top of them: the letter on the left,
+  and the app and window title on the right (for example **Brave**, the page
+  you have open).
 - Windows on other workspaces show up in mini-maps along the bottom of the
-  screen, one card per workspace. Pressing their letter switches workspace and
-  focuses the window.
+  screen, one card per workspace, each window with its letter, app and title.
+  Pressing their letter switches workspace and focuses the window. Workspaces
+  with nothing open don't get a card.
 - Letters follow the home row (`a s d f g h j k l`, then the top and bottom
   rows), so windows on screen get the easiest keys.
 - Hold `Shift` with the letter to also make the window full width (the same as
@@ -71,8 +74,8 @@ keeps no settings files.
 ## Tests
 
 ```sh
-node --test tests/     # unit tests for the logic, no dependencies (also run in CI)
-tests/smoke.sh         # live test against your running Omarchy shell
+node --test tests/*.test.mjs   # unit tests for the logic, no dependencies (also run in CI)
+tests/smoke.sh                 # live test against your running Omarchy shell
 ```
 
 The unit tests cover letter assignment, workspace mini-maps, multiple monitors,

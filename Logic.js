@@ -21,6 +21,24 @@ function readPayload(json) {
   return { maximize: !!p && typeof p === "object" && p.maximize === true }
 }
 
+// A readable app name from a window class: "brave-browser" -> "Brave",
+// "com.mitchellh.ghostty" -> "Ghostty", "org.gnome.Nautilus" -> "Nautilus".
+function appName(cls) {
+  var name = String(cls || "").split(".").pop().replace(/-(browser|desktop|bin)$/i, "").replace(/[-_]+/g, " ").trim()
+  return name ? name.charAt(0).toUpperCase() + name.slice(1) : ""
+}
+
+// A window title trimmed for a small card: drops leading status symbols
+// (spinners, icons) and a trailing " - App" that repeats the app name.
+function shortTitle(title, app) {
+  var t = String(title || "").replace(/^[\s\u2000-\u2BFF\uE000-\uF8FF\u2022\u00B7*]+/, "").trim()
+  if (app) {
+    var tail = t.match(/\s+[-–—|]\s+([^-–—|]+)$/)
+    if (tail && tail[1].trim().toLowerCase().indexOf(app.toLowerCase()) === 0) t = t.slice(0, tail.index).trim()
+  }
+  return t
+}
+
 function isArray2(v) {
   return Array.isArray(v) && v.length >= 2 && typeof v[0] === "number" && typeof v[1] === "number"
 }
@@ -61,6 +79,7 @@ function buildHints(clientsJson, monitorsJson) {
     var m = isVisible(c) ? focused : monitorById(c.monitor)
     var h = {
       key: KEYS[i], address: c.address, cls: String(c["class"] || ""), fullscreen: c.fullscreen || 0,
+      app: appName(c["class"]), title: shortTitle(c.title, appName(c["class"])),
       x: c.at[0] - (m.x || 0), y: c.at[1] - (m.y || 0), w: c.size[0], h: c.size[1]
     }
     hints.push(h)

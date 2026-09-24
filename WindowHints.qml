@@ -19,7 +19,13 @@ Item {
   property var others: []   // [{ name, windows: [hint] }] for workspaces not on screen
   property real screenW: 1920
   property real screenH: 1080
-  readonly property real miniScale: Style.space(260) / screenW
+  // Mini-map cards are up to 340px wide, narrower when many workspaces need
+  // to fit across the screen.
+  readonly property real miniScale: {
+    var n = Math.max(1, others.length)
+    var room = (panel.width - Style.gapsOut * 4 - Style.spacing.md * (n - 1)) / n - Style.space(16)
+    return Math.max(Style.space(120), Math.min(Style.space(340), room)) / screenW
+  }
 
   // Theme accent on the menu background, so hints read over any window.
   readonly property color accent: Color.menu.selectedText
@@ -112,20 +118,73 @@ Item {
           radius: Style.cornerRadius
         }
 
+        // One card: the letter on the left, what's open there on the right.
         Rectangle {
+          id: card
           anchors.centerIn: parent
-          width: Style.space(96); height: width
+          width: Math.min(cardRow.implicitWidth + Style.spacing.md * 2, parent.width - Style.space(16))
+          height: cardRow.implicitHeight + Style.spacing.md * 2
           radius: Style.cornerRadius
           color: Color.menu.background
           border.color: root.accent
           border.width: 3
-          Text {
-            anchors.centerIn: parent
-            text: modelData.key.toUpperCase()
-            color: root.accent
-            font.family: Style.font.menuFamily
-            font.pixelSize: Style.space(56)
-            font.bold: true
+
+          Row {
+            id: cardRow
+            x: Style.spacing.md
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.spacing.lg
+
+            Rectangle {
+              id: letterBox
+              width: Style.space(72); height: width
+              radius: Style.cornerRadius
+              color: root.accent
+              Text {
+                anchors.centerIn: parent
+                text: modelData.key.toUpperCase()
+                color: Color.menu.background
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.space(46)
+                font.bold: true
+              }
+            }
+
+            Column {
+              id: labels
+              anchors.verticalCenter: parent.verticalCenter
+              visible: modelData.app !== "" || modelData.title !== ""
+              // Text as wide as it needs, up to what fits in the window.
+              readonly property real room: card.parent.width - Style.space(16) - Style.spacing.md * 2
+                - letterBox.width - cardRow.spacing
+              width: Math.max(0, Math.min(Math.max(appLabel.implicitWidth, titleLabel.implicitWidth), room, Style.space(360)))
+              spacing: Style.spacing.xs
+
+              Text {
+                id: appLabel
+                width: parent.width
+                text: modelData.app
+                color: Color.menu.text
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.heading
+                font.bold: true
+                elide: Text.ElideRight
+                visible: text !== ""
+              }
+              Text {
+                id: titleLabel
+                width: parent.width
+                text: modelData.title
+                color: Color.menu.text
+                opacity: 0.75
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.title
+                wrapMode: Text.Wrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+                visible: text !== ""
+              }
+            }
           }
         }
       }
@@ -172,22 +231,45 @@ Item {
                 border.width: 2
                 clip: true
 
+                // Letter, then what's open there: app name and the window title.
                 Column {
+                  id: miniInfo
                   anchors.centerIn: parent
+                  width: parent.width - Style.space(8)
+                  spacing: 1
                   Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
                     text: modelData.key.toUpperCase()
                     color: root.accent
                     font.family: Style.font.menuFamily
-                    font.pixelSize: Style.space(28)
+                    font.pixelSize: Math.min(Style.space(28), Math.max(Style.space(14), parent.parent.height * 0.3))
                     font.bold: true
                   }
                   Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: modelData.cls
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    text: modelData.app
                     color: Color.menu.text
                     font.family: Style.font.menuFamily
                     font.pixelSize: Style.space(11)
+                    font.bold: true
+                    elide: Text.ElideRight
+                    visible: text !== ""
+                  }
+                  Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    text: modelData.title
+                    color: Color.menu.text
+                    opacity: 0.75
+                    font.family: Style.font.menuFamily
+                    font.pixelSize: Style.space(10)
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                    // Only when the window is tall enough to show it.
+                    visible: text !== "" && parent.parent.height > Style.space(46)
                   }
                 }
               }
