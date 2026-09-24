@@ -8,7 +8,8 @@ reach for the mouse to change focus.
 ## Window hints
 
 Press a key and every window gets a letter; press the letter to focus that
-window.
+window. Or type a short command, vim style, to reach, move and resize windows
+on any workspace, without going there first.
 
 - Windows on screen get a card right on top of them: the letter on the left,
   and the app and window title on the right (for example **Brave**, the page
@@ -18,11 +19,43 @@ window.
   Pressing their letter switches workspace and focuses the window. Workspaces
   with nothing open don't get a card.
 - Letters follow the home row (`a s d f g h j k l`, then the top and bottom
-  rows), so windows on screen get the easiest keys.
+  rows) and restart at `a` in every workspace. `m` and `r` are never letters:
+  they start the move and resize commands.
+- All five workspaces show along the bottom, plus any other workspace with
+  windows. The one you're on is highlighted, empty ones say so, and each card
+  shows the number key that reaches it.
 - Hold `Shift` with the letter to also make the window full width (the same as
   Omarchy's `SUPER + ALT + F`). A window that is already full width stays as it is.
 - `Esc`, a click or any other key cancels.
 - Colors come from the current Omarchy theme.
+
+## Commands
+
+Type these after `SUPER + ;`. What you've typed shows at the top; if a command
+can't work (say, there's no window `b` on workspace 3) it says why and you can
+try again. `Backspace` removes the last key, `Esc` clears the command, and a
+second `Esc` closes the hints.
+
+| Type | Does |
+|---|---|
+| `a` | Focus window `a` on screen (`Shift` + letter also makes it full width) |
+| `2a` | Focus window `a` on workspace 2 |
+| `2` `Enter` | Go to workspace 2 |
+| `m32b` | Move workspace 3's window to workspace 2, into window `b`'s spot |
+| `m3a2b` | The same, when workspace 3 has several windows: `a` picks which |
+| `m32` `Enter` | Move it to workspace 2 without picking a spot |
+| `rk6` | Resize window `k` on screen to 6 of 12 columns, like Bootstrap |
+| `rk12` | Make window `k` full width |
+| `rk1` `Enter` | Resize window `k` to 1 of 12 columns (`1` waits, since `10`–`12` start with it) |
+
+`0` means workspace 10. Moving never takes you anywhere: you stay where you
+are, and if the window moves to the workspace you're on it gets focus.
+Omarchy's own `SHIFT + SUPER + number` only moves the focused window; this
+moves any window between any two workspaces.
+
+Column widths follow your Hyprland gaps and borders, so `rk6` on two windows
+side by side gives the same split Hyprland makes itself. In a split, windows
+that share a column resize together.
 
 ## Requirements
 
@@ -56,11 +89,11 @@ The last-window flip is plain Hyprland and needs no plugin code.
 
 | Shortcut | Does |
 |---|---|
-| `SUPER + ;` | Letters on every window, including other workspaces; press one to jump there |
+| `SUPER + ;` | Letters on every window and all workspaces; then a letter or a command |
 | `SUPER + SHIFT + ;` | The same, and the chosen window goes full width |
 | `Shift` + letter | Full width for that one jump, from the normal hints |
 | `SUPER + '` | Flip to the previously focused window; press again to flip back |
-| `Esc` or any other key | Close the hints without moving |
+| `Esc` | Clear the command, or close the hints |
 
 ## Uninstall
 
@@ -78,16 +111,20 @@ node --test tests/*.test.mjs   # unit tests for the logic, no dependencies (also
 tests/smoke.sh                 # live test against your running Omarchy shell
 ```
 
-The unit tests cover letter assignment, workspace mini-maps, multiple monitors,
-display scaling and broken `hyprctl` output. They also run the real focus
-command against a fake `hyprctl`, including window addresses that try to inject
-shell commands. The smoke test opens and closes the hints, presses real keys
+The unit tests cover letter assignment, the workspace overview, multiple
+monitors, display scaling, broken `hyprctl` output and the whole command
+language: every key sequence up to five keys is checked to be pending, done or
+invalid. They also run the real focus, move and resize commands against a fake
+`hyprctl`, including values that try to inject shell commands. The smoke test opens and closes the hints, presses real keys
 with `wtype` (only the letter of the window that's already focused, so nothing
-on screen changes) and hammers it with quick open/close cycles.
+on screen changes), runs move commands between hidden workspaces 7 and 8
+(checking by window address that a swap lands in the right spot) and hammers
+it with quick open/close cycles.
 
 ## Limitations
 
-- Up to 26 windows get a letter.
+- Up to 24 windows per workspace get a letter.
+- Resizing works on windows on screen.
 - On-screen hints are drawn on the focused monitor only.
 - Mini-maps are drawn at the focused monitor's aspect ratio.
 - For a few seconds right after login or a shell restart, the key may do

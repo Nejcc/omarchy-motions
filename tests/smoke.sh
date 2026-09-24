@@ -73,14 +73,47 @@ if command -v wtype >/dev/null && command -v node >/dev/null; then
     check "…and focuses that letter's window" '[ "$(active)" = "$start" ]'
     check "…without changing full width" '[ "$(active_fullscreen)" = "$fs_before" ]'
     summon; wait_shown; sleep 0.3
-    wtype 1
-    check "a key that isn't a letter just closes them" wait_hidden
+    wtype ";"
+    check "a key that isn't part of a command just closes them" wait_hidden
     check "…and leaves focus alone" '[ "$(active)" = "$start" ]'
   else
     skip "focused window has no letter (more than 26 windows?)"
   fi
 else
   skip "key presses (needs wtype and node)"
+fi
+
+# --- commands on hidden workspaces 7 and 8 (nothing on screen moves)
+d() { hyprctl dispatch "$1" >/dev/null 2>&1; }
+typed() { shown || return 1; wtype "$@"; }
+on_ws() { hyprctl clients -j | python3 -c "import json,sys;print(sum(1 for c in json.load(sys.stdin) if c['class']=='motions-smoke' and c['workspace']['id']==$1))"; }
+addr_at() { hyprctl clients -j | python3 -c "import json,sys;print(next((c['address'] for c in json.load(sys.stdin) if c['class']=='motions-smoke' and c['workspace']['id']==$1 and c['at']==[$2,$3]),''))"; }
+if [ "$(on_ws 7)" = 0 ] && [ "$(on_ws 8)" = 0 ] && command -v wtype >/dev/null && command -v python3 >/dev/null \
+   && ! hyprctl clients -j | grep -qE '"id": (7|8),'; then
+  d 'hl.dsp.exec_cmd("[workspace 7 silent] foot --app-id=motions-smoke")'; sleep 0.8
+  d 'hl.dsp.exec_cmd("[workspace 8 silent] foot --app-id=motions-smoke")'; sleep 0.8
+  d 'hl.dsp.exec_cmd("[workspace 8 silent] foot --app-id=motions-smoke")'
+  for _ in $(seq 1 30); do [ "$(on_ws 7)$(on_ws 8)" = 12 ] && break; sleep 0.2; done
+  cleanup_windows() { for pid in $(hyprctl clients -j | python3 -c "import json,sys;print(' '.join(str(c['pid']) for c in json.load(sys.stdin) if c['class']=='motions-smoke'))"); do kill "$pid"; done; }
+  trap cleanup_windows EXIT
+
+  summon; wait_shown; sleep 0.3; typed m78; typed -k Return; sleep 1
+  check "m78 Enter moves workspace 7's window to 8 without going there" '[ "$(on_ws 7)$(on_ws 8)" = 03 ] && [ "$(active)" = "$start" ]'
+  summon; wait_shown; sleep 0.3; typed m8a7; typed -k Return; sleep 1
+  check "m8a7 Enter moves window a of workspace 8 to 7" '[ "$(on_ws 7)$(on_ws 8)" = 12 ]'
+
+  moving=$(hyprctl clients -j | python3 -c "import json,sys;print(next(c['address'] for c in json.load(sys.stdin) if c['class']=='motions-smoke' and c['workspace']['id']==7))")
+  spot=$(hyprctl clients -j | python3 -c "import json,sys;w=sorted([c for c in json.load(sys.stdin) if c['class']=='motions-smoke' and c['workspace']['id']==8],key=lambda c:(c['at'][1],c['at'][0]));print(*w[0]['at'])")
+  summon; wait_shown; sleep 0.3; typed m78a; sleep 1
+  check "m78a moves it into window a's spot on workspace 8" '[ "$(addr_at 8 ${spot% *} ${spot#* })" = "$moving" ]'
+
+  summon; wait_shown; sleep 0.3; typed 7z; sleep 0.5
+  check "an impossible command keeps the hints open" shown
+  typed -k Escape; sleep 0.2; typed -k Escape
+  check "Esc clears it, a second Esc closes" wait_hidden
+  cleanup_windows; trap - EXIT
+else
+  skip "move commands (needs empty workspaces 7 and 8, wtype and python3)"
 fi
 
 # --- hammer it

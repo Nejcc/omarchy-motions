@@ -5,8 +5,9 @@ import QtQuick
 import qs.Commons
 import "Logic.js" as Logic
 
-// Press the bound key, every window on the visible workspace(s) gets a letter,
-// press the letter to focus it. Esc or any other key cancels.
+// Press the bound key and every window gets a letter; type a command (see
+// Logic.js): a letter to jump, 2a for another workspace, m32b to move, rk6
+// to resize. Esc cancels.
 Item {
   id: root
 
@@ -16,13 +17,21 @@ Item {
   property var hints: []    // every labeled window: { key, address, cls, fullscreen, x, y, w, h }
   property bool maximize: false  // also make the target full width (SUPER + ALT + F) after focusing
   property var inPlace: []  // hints drawn over windows on screen
-  property var others: []   // [{ name, windows: [hint] }] for workspaces not on screen
+  property var workspaces: []  // overview cards: [{ name, digit, current, windows: [hint] }]
   property real screenW: 1920
   property real screenH: 1080
+  property var result: null     // latest buildHints() result, for resolving commands
+  property string command: ""   // keys typed so far ("\n" is Enter)
+  property string commandError: ""
+  // Workspace numbers typed so far, to light up their cards.
+  readonly property var litDigits: command.replace(/[^0-9]/g, "").split("")
+  // Gap and border sizes for column widths; read from Hyprland at startup.
+  property int gapsIn: 5
+  property int borderSize: 2
   // Mini-map cards are up to 340px wide, narrower when many workspaces need
   // to fit across the screen.
   readonly property real miniScale: {
-    var n = Math.max(1, others.length)
+    var n = Math.max(1, workspaces.length)
     var room = (panel.width - Style.gapsOut * 4 - Style.spacing.md * (n - 1)) / n - Style.space(16)
     return Math.max(Style.space(120), Math.min(Style.space(340), room)) / screenW
   }
@@ -32,6 +41,8 @@ Item {
 
   function open(payloadJson) {
     root.maximize = Logic.readPayload(payloadJson).maximize
+    root.command = ""
+    root.commandError = ""
     clients.running = true
   }
 
@@ -53,21 +64,77 @@ Item {
   function build(clientsJson, monitorsJson) {
     var r = Logic.buildHints(clientsJson, monitorsJson)
     if (!r) return root.dismiss()
+    root.result = r
     root.hints = r.hints
     root.inPlace = r.inPlace
-    root.others = r.others
+    root.workspaces = r.workspaces
     root.screenW = r.screenW
     root.screenH = r.screenH
     root.opened = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
-  // Shift + letter, or opening with {"maximize": true}, also makes the window full width.
-  function jump(key, maximize) {
-    var hit = root.hints.find(function(h) { return h.key === key })
+  function run(script, args) {
     root.dismiss()
-    if (!hit) return
-    Quickshell.execDetached(["sh", "-c", Logic.jumpScript(maximize, hit.fullscreen), "sh", "address:" + hit.address])
+    Quickshell.execDetached(["sh", "-c", script, "sh"].concat(args))
+  }
+
+  // One key of a command. Unknown or impossible commands show why and start
+  // over, keeping the hints open.
+  function feed(token, shift) {
+    var next = root.command + token
+    var parsed = Logic.parseCommand(next)
+    root.commandError = ""
+    if (parsed.state === "pending") return root.command = next
+    root.command = ""
+    if (parsed.state === "invalid") return root.commandError = "Unknown command " + next.replace("\n", "⏎")
+    var r = Logic.resolveCommand(parsed.action, root.result)
+    if (r.error) return root.commandError = r.error
+    var addr = function(h) { return "address:" + h.address }
+    if (r.kind === "focus")
+      // Shift + letter, or opening with {"maximize": true}, also makes it full width.
+      return root.run(Logic.jumpScript(root.maximize || shift, r.hint.fullscreen), [addr(r.hint)])
+    if (r.kind === "workspace") return root.run(Logic.workspaceScript(), [String(r.ws)])
+    if (r.kind === "move")
+      return root.run(Logic.moveScript(), [addr(r.window), String(r.to), r.slot ? addr(r.slot) : "", r.focus ? "1" : "0"])
+    if (r.kind === "resize") {
+      if (r.cols === 12) return root.run(Logic.jumpScript(true, r.window.fullscreen), [addr(r.window)])
+      var w = Logic.columnWidth(r.cols, { screenW: root.screenW, gapsOut: Style.gapsOut, gapsIn: root.gapsIn, border: root.borderSize })
+      return root.run(Logic.resizeScript(), [addr(r.window), String(w), String(Math.round(r.window.h)), r.window.fullscreen ? "1" : "0"])
+    }
+  }
+
+  function onKey(event) {
+    var shift = (event.modifiers & Qt.ShiftModifier) !== 0
+    if (event.key === Qt.Key_Escape) {
+      if (root.command !== "" || root.commandError !== "") { root.command = ""; root.commandError = "" }
+      else root.dismiss()
+    } else if (event.key === Qt.Key_Backspace) {
+      root.command = root.command.slice(0, -1)
+      root.commandError = ""
+    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+      root.feed("\n", shift)
+    } else {
+      var token = Logic.tokenFor(event.text)
+      if (token) root.feed(token, shift)
+      // Any other key closes the hints, unless a command is under way.
+      else if (event.text && root.command === "") root.dismiss()
+    }
+  }
+
+  Component.onCompleted: hyprOptions.running = true
+
+  Process {
+    id: hyprOptions
+    command: ["sh", "-c", "hyprctl getoption general:gaps_in -j; hyprctl getoption general:border_size -j"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var gaps = text.match(/"css":\s*"(\d+)/) || text.match(/"custom":\s*"(\d+)/)
+        var border = text.match(/"int":\s*(\d+)/)
+        if (gaps) root.gapsIn = parseInt(gaps[1], 10)
+        if (border) root.borderSize = parseInt(border[1], 10)
+      }
+    }
   }
 
   Process {
@@ -100,7 +167,7 @@ Item {
       focus: true
       Keys.onPressed: function(event) {
         event.accepted = true
-        root.jump(Logic.keyFor(event.text), root.maximize || (event.modifiers & Qt.ShiftModifier) !== 0)
+        root.onKey(event)
       }
     }
 
@@ -189,7 +256,37 @@ Item {
         }
       }
     }
-      // Workspaces that are not on screen: one mini-map card each, along the bottom.
+      // Command line near the top: what's typed so far, why a command failed,
+      // or a reminder of the commands.
+      Rectangle {
+        anchors.top: parent.top
+        anchors.topMargin: Style.space(48)
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(commandText.implicitWidth + Style.spacing.xl * 2, parent.width - Style.space(32))
+        height: commandText.implicitHeight + Style.spacing.md * 2
+        radius: Style.cornerRadius
+        color: Color.menu.background
+        border.color: root.commandError !== "" || root.command !== "" ? root.accent : Color.menu.border
+        border.width: root.commandError !== "" || root.command !== "" ? 2 : 1
+
+        Text {
+          id: commandText
+          anchors.centerIn: parent
+          width: Math.min(implicitWidth, parent.parent.width - Style.space(32) - Style.spacing.xl * 2)
+          elide: Text.ElideRight
+          color: root.commandError !== "" || root.command !== "" ? root.accent : Color.menu.text
+          opacity: root.commandError !== "" || root.command !== "" ? 1 : 0.7
+          font.family: Style.font.menuFamily
+          font.pixelSize: Style.font.title
+          font.bold: root.command !== ""
+          text: root.commandError !== "" ? root.commandError
+            : root.command !== "" ? "› " + root.command.replace("\n", "⏎") + "▏"
+            : "a jump  ·  2a on workspace 2  ·  2⏎ go there  ·  m32b move  ·  rk6 resize (of 12)  ·  Esc close"
+        }
+      }
+
+      // Overview along the bottom: one mini-map card per workspace (1-5 always,
+      // plus any other with windows). The current one is highlighted.
     Row {
       anchors.bottom: parent.bottom
       anchors.horizontalCenter: parent.horizontalCenter
@@ -197,22 +294,60 @@ Item {
       spacing: Style.spacing.md
 
       Repeater {
-        model: root.others
+        model: root.workspaces
         delegate: Rectangle {
+          id: wsCard
           required property var modelData
           width: root.screenW * root.miniScale + Style.space(16)
           height: root.screenH * root.miniScale + Style.space(44)
           radius: Style.cornerRadius
           color: Color.menu.background
-          border.color: Color.menu.border
-          border.width: 2
+          // Lit while its number is part of the command being typed.
+          readonly property bool lit: modelData.digit !== "" && root.litDigits.indexOf(modelData.digit) !== -1
+          border.color: modelData.current || lit ? root.accent : Color.menu.border
+          border.width: modelData.current || lit ? 3 : 2
+
+          // Header: the number key that goes there, and the workspace name.
+          Row {
+            x: Style.space(8); y: Style.space(6)
+            spacing: Style.spacing.md
+            Rectangle {
+              visible: wsCard.modelData.digit !== ""
+              width: Math.max(Style.space(22), digitText.implicitWidth + Style.spacing.md * 2)
+              height: digitText.implicitHeight + Style.spacing.xs * 2
+              radius: Math.max(3, Style.cornerRadius / 2)
+              color: wsCard.modelData.current ? root.accent : "transparent"
+              border.color: root.accent
+              border.width: 1
+              Text {
+                id: digitText
+                anchors.centerIn: parent
+                text: wsCard.modelData.digit
+                color: wsCard.modelData.current ? Color.menu.background : root.accent
+                font.family: Style.font.menuFamily
+                font.pixelSize: Style.font.title
+                font.bold: true
+              }
+            }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: wsCard.modelData.current ? "here" : (wsCard.modelData.digit === "" ? wsCard.modelData.name : "")
+              color: Color.menu.text
+              opacity: 0.6
+              font.family: Style.font.menuFamily
+              font.pixelSize: Style.font.body
+            }
+          }
 
           Text {
-            x: Style.space(8); y: Style.space(6)
-            text: modelData.name
+            anchors.centerIn: parent
+            anchors.verticalCenterOffset: Style.space(14)
+            visible: wsCard.modelData.windows.length === 0
+            text: "Empty"
             color: Color.menu.text
+            opacity: 0.4
             font.family: Style.font.menuFamily
-            font.pixelSize: Style.font.title
+            font.pixelSize: Style.font.body
           }
 
           Item {

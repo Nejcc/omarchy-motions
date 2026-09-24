@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "nejcc.motions",
   "name": "Omarchy motions",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "Nejcc",
   "license": "MIT",
-  "description": "Keyboard window motions: jump to any window by letter, across workspaces",
+  "description": "Keyboard window motions: jump to, move and resize any window on any workspace with short vim-style commands",
   "kinds": ["overlay"],
   "keepLoaded": true,
   "entryPoints": { "overlay": "WindowHints.qml" }
