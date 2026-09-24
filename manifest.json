@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "nejcc.window-hints",
+  "name": "Window hints",
+  "version": "1.0.0",
+  "author": "Nejcc",
+  "license": "MIT",
+  "description": "Label every window with a key, including other workspaces; press the key to focus it",
+  "kinds": ["overlay"],
+  "keepLoaded": true,
+  "entryPoints": { "overlay": "WindowHints.qml" }
+}
