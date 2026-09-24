@@ -3,6 +3,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import qs.Commons
+import "Logic.js" as Logic
 
 // Press the bound key, every window on the visible workspace(s) gets a letter,
 // press the letter to focus it. Esc or any other key cancels.
@@ -20,14 +21,11 @@ Item {
   property real screenH: 1080
   readonly property real miniScale: Style.space(260) / screenW
 
-  // Home row first so the common case stays under your fingers.
   // Theme accent on the menu background, so hints read over any window.
   readonly property color accent: Color.menu.selectedText
 
-  readonly property string keys: "asdfghjklqwertyuiopzxcvbnm"
-
   function open(payloadJson) {
-    try { root.maximize = JSON.parse(payloadJson || "{}").maximize === true } catch (e) { root.maximize = false }
+    root.maximize = Logic.readPayload(payloadJson).maximize
     clients.running = true
   }
 
@@ -47,40 +45,13 @@ Item {
   }
 
   function build(clientsJson, monitorsJson) {
-    var monitors = JSON.parse(monitorsJson)
-    var focused = monitors.find(function(m) { return m.focused }) || monitors[0]
-    // ponytail: in-place hints only on the focused monitor; one panel per screen if you add a second display.
-    var visible = [focused.activeWorkspace.id, focused.specialWorkspace.id]
-    var all = JSON.parse(clientsJson).filter(function(c) { return c.mapped && !c.hidden })
-    var isVisible = function(c) { return visible.indexOf(c.workspace.id) !== -1 }
-    // Visible windows first so they keep the home-row letters, then the rest by workspace.
-    all.sort(function(a, b) {
-      return (isVisible(b) - isVisible(a)) || (a.workspace.id - b.workspace.id)
-        || a.at[1] - b.at[1] || a.at[0] - b.at[0]
-    })
-    all = all.slice(0, root.keys.length)
-
-    var hints = [], byWs = {}, wsOrder = []
-    all.forEach(function(c, i) {
-      var h = { key: root.keys[i], address: c.address, cls: c.class, fullscreen: c.fullscreen,
-                x: c.at[0] - focused.x, y: c.at[1] - focused.y, w: c.size[0], h: c.size[1] }
-      hints.push(h)
-      if (isVisible(c)) return
-      if (!byWs[c.workspace.id]) {
-        byWs[c.workspace.id] = { name: c.workspace.name.replace(/^special:?/, "S "), windows: [] }
-        wsOrder.push(c.workspace.id)
-      }
-      // ponytail: mini-maps assume every workspace has the focused monitor's size.
-      var m = monitors.find(function(mm) { return mm.id === c.monitor }) || focused
-      h.x = c.at[0] - m.x; h.y = c.at[1] - m.y
-      byWs[c.workspace.id].windows.push(h)
-    })
-    root.hints = hints
-    root.inPlace = hints.filter(function(h) { return !wsOrder.some(function(id) { return byWs[id].windows.indexOf(h) !== -1 }) })
-    root.others = wsOrder.map(function(id) { return byWs[id] })
-    root.screenW = focused.width / focused.scale
-    root.screenH = focused.height / focused.scale
-    if (hints.length === 0) return root.dismiss()
+    var r = Logic.buildHints(clientsJson, monitorsJson)
+    if (!r) return root.dismiss()
+    root.hints = r.hints
+    root.inPlace = r.inPlace
+    root.others = r.others
+    root.screenW = r.screenW
+    root.screenH = r.screenH
     root.opened = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -90,13 +61,7 @@ Item {
     var hit = root.hints.find(function(h) { return h.key === key })
     root.dismiss()
     if (!hit) return
-    var target = "address:" + hit.address
-    // Lua dispatcher on current Hyprland, classic dispatchers on older releases.
-    var script = 'hyprctl dispatch "hl.dsp.focus({ window = \\"$1\\" })" >/dev/null 2>&1 || hyprctl dispatch focuswindow "$1"'
-    // Only when not already full width: the dispatcher toggles.
-    if (maximize && hit.fullscreen === 0)
-      script += '; hyprctl dispatch "hl.dsp.window.fullscreen({ mode = \\"maximized\\", window = \\"$1\\" })" >/dev/null 2>&1 || hyprctl dispatch fullscreen 1'
-    Quickshell.execDetached(["sh", "-c", script, "sh", target])
+    Quickshell.execDetached(["sh", "-c", Logic.jumpScript(maximize, hit.fullscreen), "sh", "address:" + hit.address])
   }
 
   Process {
@@ -129,7 +94,7 @@ Item {
       focus: true
       Keys.onPressed: function(event) {
         event.accepted = true
-        root.jump(event.text.toLowerCase(), root.maximize || (event.modifiers & Qt.ShiftModifier) !== 0)
+        root.jump(Logic.keyFor(event.text), root.maximize || (event.modifiers & Qt.ShiftModifier) !== 0)
       }
     }
 

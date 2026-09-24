@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "nejcc.motions",
   "name": "Omarchy motions",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Nejcc",
   "license": "MIT",
   "description": "Keyboard window motions: jump to any window by letter, across workspaces",

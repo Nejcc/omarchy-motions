@@ -21,6 +21,12 @@ window.
 - `Esc`, a click or any other key cancels.
 - Colors come from the current Omarchy theme.
 
+## Requirements
+
+Omarchy with its Quickshell-based shell, on Hyprland with Lua config (older
+Hyprland releases fall back to the classic dispatchers). It calls `hyprctl`,
+which ships with Hyprland. Nothing else to install.
+
 ## Install
 
 ```sh
@@ -42,6 +48,29 @@ o.bind("SUPER + APOSTROPHE", "Last window", function() hl.dispatch(hl.dsp.focus(
 
 These keys are free in the default Omarchy bindings. Pick others if you prefer.
 The last-window flip is plain Hyprland and needs no plugin code.
+
+## Uninstall
+
+```sh
+omarchy plugin remove nejcc.motions
+```
+
+Then delete the lines you added to `~/.config/hypr/bindings.lua`. The plugin
+keeps no settings files.
+
+## Tests
+
+```sh
+node --test tests/     # unit tests for the logic, no dependencies (also run in CI)
+tests/smoke.sh         # live test against your running Omarchy shell
+```
+
+The unit tests cover letter assignment, workspace mini-maps, multiple monitors,
+display scaling and broken `hyprctl` output. They also run the real focus
+command against a fake `hyprctl`, including window addresses that try to inject
+shell commands. The smoke test opens and closes the hints, presses real keys
+with `wtype` (only the letter of the window that's already focused, so nothing
+on screen changes) and hammers it with quick open/close cycles.
 
 ## Limitations
 
