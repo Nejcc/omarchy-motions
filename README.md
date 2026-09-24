@@ -49,6 +49,16 @@ o.bind("SUPER + APOSTROPHE", "Last window", function() hl.dispatch(hl.dsp.focus(
 These keys are free in the default Omarchy bindings. Pick others if you prefer.
 The last-window flip is plain Hyprland and needs no plugin code.
 
+## Usage
+
+| Shortcut | Does |
+|---|---|
+| `SUPER + ;` | Letters on every window, including other workspaces; press one to jump there |
+| `SUPER + SHIFT + ;` | The same, and the chosen window goes full width |
+| `Shift` + letter | Full width for that one jump, from the normal hints |
+| `SUPER + '` | Flip to the previously focused window; press again to flip back |
+| `Esc` or any other key | Close the hints without moving |
+
 ## Uninstall
 
 ```sh
@@ -77,6 +87,15 @@ on screen changes) and hammers it with quick open/close cycles.
 - Up to 26 windows get a letter.
 - On-screen hints are drawn on the focused monitor only.
 - Mini-maps are drawn at the focused monitor's aspect ratio.
+- For a few seconds right after login or a shell restart, the key may do
+  nothing while the Omarchy shell loads its plugins. This affects every shell
+  plugin, not just this one.
+
+## See also
+
+[Keybindings hint](https://github.com/Nejcc/omarchy-keybindings-hint): hold
+`SUPER` to see what every `SUPER + key` does, with suggestions for your next
+move. It suggests `SUPER + ;` and `SUPER + '` when you have several windows open.
 
 ## License
 
