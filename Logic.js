@@ -348,7 +348,7 @@ function luaString(value) {
 // Switches to workspace "$1"; per-monitor mode takes a quoted Lua name.
 function workspaceScript(perMonitor) {
   if (perMonitor)
-    return 'hyprctl dispatch "function() local p = per_monitor_workspaces; local n = $1; hl.dispatch(hl.dsp.focus({ workspace = p and p.selector(n) or (\\"name:\\" .. n) })) end"'
+    return 'hyprctl dispatch "function() local p = per_monitor_workspaces; local a = p and p.integration; local resolve = a and a.version == 1 and a.resolve_workspace or p and p.selector; local n = $1; hl.dispatch(hl.dsp.focus({ workspace = resolve and resolve(n) or (\\"name:\\" .. n) })) end"'
 
   return 'hyprctl dispatch "hl.dsp.focus({ workspace = \\"$1\\" })" >/dev/null 2>&1 || hyprctl dispatch workspace "$1"'
 }
@@ -366,7 +366,7 @@ function resizeScript() {
 // spot of window "$3" when given, and focuses it when "$4" is 1.
 function moveScript(perMonitor) {
   if (perMonitor)
-    return 'hyprctl dispatch "function() local p = per_monitor_workspaces; local n = $2; hl.dispatch(hl.dsp.window.move({ workspace = p and p.selector(n) or (\\"name:\\" .. n), follow = false, window = \\"$1\\" })) end"'
+    return 'hyprctl dispatch "function() local p = per_monitor_workspaces; local a = p and p.integration; local resolve = a and a.version == 1 and a.resolve_workspace or p and p.selector; local n = $2; hl.dispatch(hl.dsp.window.move({ workspace = resolve and resolve(n) or (\\"name:\\" .. n), follow = false, window = \\"$1\\" })) end"'
       + '; if [ -n "$3" ]; then hyprctl dispatch "hl.dsp.window.swap({ window = \\"$1\\", target = \\"$3\\" })"; fi'
       + '; if [ "$4" = 1 ]; then hyprctl dispatch "hl.dsp.focus({ window = \\"$1\\" })"; fi'
 

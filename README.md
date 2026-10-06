@@ -158,6 +158,10 @@ it with quick open/close cycles.
 
 ## See also
 
+With per-monitor workspaces enabled, Motions uses its version 1 integration API
+when available. Older versions continue using the existing workspace selector.
+Without that plugin, Motions keeps its ordinary numbered-workspace behavior.
+
 [Keybindings hint](https://github.com/Nejcc/omarchy-keybindings-hint): hold
 `SUPER` to see what every `SUPER + key` does, with suggestions for your next
 move. It suggests `SUPER + ;` and `SUPER + '` when you have several windows open.
