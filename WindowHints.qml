@@ -312,8 +312,9 @@ Item {
         delegate: Rectangle {
           id: wsCard
           required property var modelData
+          readonly property real previewScale: root.screenW * root.miniScale / modelData.screenW
           width: root.screenW * root.miniScale + Style.space(16)
-          height: root.screenH * root.miniScale + Style.space(44)
+          height: modelData.screenH * previewScale + Style.space(44)
           radius: Style.cornerRadius
           color: Color.menu.background
           // Lit while its number is part of the command being typed.
@@ -366,14 +367,16 @@ Item {
 
           Item {
             x: Style.space(8); y: Style.space(36)
-            width: root.screenW * root.miniScale; height: root.screenH * root.miniScale
+            width: wsCard.modelData.screenW * wsCard.previewScale
+            height: wsCard.modelData.screenH * wsCard.previewScale
+            clip: true
 
             Repeater {
               model: modelData.windows
               delegate: Rectangle {
                 required property var modelData
-                x: modelData.x * root.miniScale; y: modelData.y * root.miniScale
-                width: modelData.w * root.miniScale; height: modelData.h * root.miniScale
+                x: modelData.x * wsCard.previewScale; y: modelData.y * wsCard.previewScale
+                width: modelData.w * wsCard.previewScale; height: modelData.h * wsCard.previewScale
                 radius: Style.cornerRadius / 2
                 color: Color.menu.selectedBackground
                 border.color: root.accent

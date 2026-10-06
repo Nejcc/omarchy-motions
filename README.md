@@ -151,7 +151,7 @@ it with quick open/close cycles.
 - Up to 24 windows per workspace get a letter.
 - Resizing works on windows on screen.
 - On-screen hints are drawn on the focused monitor only.
-- Mini-maps are drawn at the focused monitor's aspect ratio.
+- Mini-maps use each workspace's monitor dimensions, rotation and scale.
 - For a few seconds right after login or a shell restart, the key may do
   nothing while the Omarchy shell loads its plugins. This affects every shell
   plugin, not just this one.
