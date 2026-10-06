@@ -57,6 +57,25 @@ Column widths follow your Hyprland gaps and borders, so `rk6` on two windows
 side by side gives the same split Hyprland makes itself. In a split, windows
 that share a column resize together.
 
+## Per-monitor workspaces
+
+Motions automatically detects [Per-monitor Workspaces](https://github.com/mmsbrggr/omarchy-per-monitor-workspaces)
+when it is enabled in `shell.json`. Keep that plugin installed for its bar,
+shortcuts and monitor unplug/replug handling.
+
+Workspace digits then mean slots on the monitor where you opened the hints:
+`2a` jumps to window `a` in that monitor's slot 2, `2` then `Enter` opens
+slot 2, and `m32` then `Enter` moves a window from its slot 3 to slot 2.
+The overview uses the plugin's configured slot count and includes slots taken
+in from unplugged monitors. Other monitors' workspaces have no digit shortcut.
+Typed commands support slots 1–10 (`0` means 10); higher slots remain visible
+in the overview. The hints open on the focused monitor.
+
+The integration reuses the plugin's workspace selector when its recommended
+Lua shortcuts are loaded, preserving its workspace IDs and names, including
+empty slots. Without those shortcuts, it addresses workspaces by name.
+Disabling the plugin restores ordinary global workspace numbers.
+
 ## Requirements
 
 Omarchy with its Quickshell-based shell, on Hyprland with Lua config (older

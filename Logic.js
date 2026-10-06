@@ -53,11 +53,40 @@ function isArray2(v) {
     && isFinite(v[0]) && isFinite(v[1])
 }
 
+// Match the per-monitor plugin's public naming scheme, including unplugged
+// screens' guest slots. Monitor descriptions may themselves contain colons.
+function monitorKey(monitor, monitors) {
+  var description = String(monitor.description || "")
+  if (!description) return String(monitor.name || "")
+  return monitors.some(function(m) { return m.name !== monitor.name && m.description === description })
+    ? description + "@" + monitor.name : description
+}
+
+function monitorSlot(name, key) {
+  var base = String(name || "").replace(/#[0-9]+\.[0-9]+$/, "")
+  var prefix = key + ":"
+  var tail = base.slice(prefix.length)
+  return base.indexOf(prefix) === 0 && /^[1-9][0-9]*$/.test(tail) ? Number(tail) : null
+}
+
+function perMonitorSettings(configJson) {
+  var config = parseJson(configJson, {})
+  var id = "mmsbrggr.per-monitor-workspaces"
+  if (Array.isArray(config.disabledPlugins) && config.disabledPlugins.indexOf(id) !== -1) return null
+  var entries = Array.isArray(config.plugins) ? config.plugins.slice() : []
+  var layout = config.bar && config.bar.layout || {}
+  Object.keys(layout).forEach(function(k) { if (Array.isArray(layout[k])) entries = entries.concat(layout[k]) })
+  var entry = entries.find(function(e) { return e && e.id === id })
+  if (!entry) return null
+  var count = Number(entry.count)
+  return { count: isFinite(count) && count > 0 ? Math.floor(count) : ALWAYS_SHOWN }
+}
+
 // Turns `hyprctl clients -j` and `hyprctl monitors -j` into hints and the
 // workspace overview. Letters restart at "a" in every workspace; the windows
 // on screen share one run of letters. Returns null if hyprctl output is
 // unreadable.
-function buildHints(clientsJson, monitorsJson) {
+function buildHints(clientsJson, monitorsJson, perMonitor, workspacesJson) {
   // Unreadable output means hyprctl failed: show nothing rather than a
   // misleading "everything is empty" overview.
   var monitors = parseJson(monitorsJson, null)
@@ -85,19 +114,39 @@ function buildHints(clientsJson, monitorsJson) {
     return (a.workspace.id - b.workspace.id) || a.at[1] - b.at[1] || a.at[0] - b.at[0]
   })
 
+  var key = perMonitor ? monitorKey(focused, monitors) : ""
+  var slots = {}
+  var workspaceList = parseJson(workspacesJson, [])
+  if (!Array.isArray(workspaceList)) workspaceList = []
+  // Include empty active workspaces and clients if the workspace query failed.
+  workspaceList = workspaceList.concat(monitors.map(function(m) { return m.activeWorkspace }), all.map(function(c) { return c.workspace }))
+  if (perMonitor) workspaceList.forEach(function(w) {
+    var slot = w && monitorSlot(w.name, key)
+    if (slot && Number.isInteger(w.id)) slots[slot] = { id: w.id, name: w.name }
+  })
   var byWs = {}
   var card = function(id, name) {
-    var key = "ws" + id
-    if (!byWs[key]) {
-      byWs[key] = {
-        id: id, name: String(name || id).replace(/^special:?/, "S "),
-        digit: id >= 1 && id <= 10 ? String(id % 10) : "",
+    var cardKey = "ws" + id
+    if (!byWs[cardKey]) {
+      var slot = perMonitor ? monitorSlot(name, key) : null
+      byWs[cardKey] = {
+        id: id, name: slot ? String(slot) : String(name || id).replace(/^special:?/, "S "),
+        slot: slot,
+        digit: perMonitor ? (slot && slot <= 10 ? String(slot % 10) : "") : (id >= 1 && id <= 10 ? String(id % 10) : ""),
         current: visible.indexOf(id) !== -1, windows: []
       }
     }
-    return byWs[key]
+    return byWs[cardKey]
   }
-  for (var n = 1; n <= ALWAYS_SHOWN; n++) card(n, String(n))
+  if (perMonitor) {
+    Object.keys(slots).forEach(function(n) { card(slots[n].id, slots[n].name) })
+    for (var n = 1; n <= perMonitor.count; n++) {
+      var existing = slots[n]
+      card(existing ? existing.id : "name:" + key + ":" + n, existing ? existing.name : key + ":" + n)
+    }
+  } else {
+    for (var n = 1; n <= ALWAYS_SHOWN; n++) card(n, String(n))
+  }
 
   // One run of letters per group: "here" (everything on screen), then one
   // per other workspace.
@@ -127,9 +176,10 @@ function buildHints(clientsJson, monitorsJson) {
     ws.windows.push(h)
     if (!here && others.indexOf(ws) === -1) others.push(ws)
   })
-  // The overview: 1-5 always, then any other workspace with windows;
+  // The overview: configured local slots (or 1-5), then other workspaces;
   // numbered ones in order, special ones (scratchpad) last.
   var workspaces = Object.keys(byWs).map(function(k) { return byWs[k] }).sort(function(a, b) {
+    if (perMonitor && (a.slot || b.slot)) return a.slot && b.slot ? a.slot - b.slot : a.slot ? -1 : 1
     return ((a.id < 0) - (b.id < 0)) || (a.id < 0 ? b.id - a.id : a.id - b.id)
   })
   var positiveOr = function(v, fallback) { var n = numberOr(v, 0); return n > 0 ? n : fallback }
@@ -138,7 +188,8 @@ function buildHints(clientsJson, monitorsJson) {
   var height = positiveOr(focused.height, 1080)
   return {
     hints: hints, inPlace: inPlace, others: others, workspaces: workspaces, current: current,
-    screenW: width / scale, screenH: height / scale
+    screenW: width / scale, screenH: height / scale,
+    monitorName: focused.name, perMonitor: perMonitor ? { key: key, slots: slots, count: perMonitor.count } : null
   }
 }
 
@@ -207,9 +258,27 @@ function columnWidth(cols, o) {
 // { error: "message" }.
 function resolveCommand(action, r) {
   if (!action || !r) return { error: "Nothing to do" }
+  if (r.perMonitor) {
+    var requested = action.type === "move" ? [action.from, action.to] : [action.ws]
+    for (var i = 0; i < requested.length; i++) {
+      var slot = requested[i]
+      if (slot != null && slot > r.perMonitor.count && !r.perMonitor.slots[slot])
+        return { error: "No workspace slot " + slot + " on this monitor" }
+    }
+  }
   var hints = r.hints || []
+  var workspaceId = function(ws) {
+    if (ws === null || !r.perMonitor) return ws
+    var entry = r.perMonitor.slots[ws]
+    return entry ? entry.id : "name:" + r.perMonitor.key + ":" + ws
+  }
+  var workspaceName = function(ws) {
+    var entry = r.perMonitor.slots[ws]
+    return entry ? entry.name : r.perMonitor.key + ":" + ws
+  }
   // Letters for a workspace: the on-screen run if it's the current one.
   var inWs = function(ws) {
+    ws = workspaceId(ws)
     return ws === null || ws === r.current
       ? hints.filter(function(h) { return h.here })
       : hints.filter(function(h) { return !h.here && h.ws === ws })
@@ -217,13 +286,13 @@ function resolveCommand(action, r) {
   var find = function(ws, letter) {
     return inWs(ws).find(function(h) { return h.key === letter }) || null
   }
-  var where = function(ws) { return ws === null || ws === r.current ? "on screen" : "on workspace " + ws }
+  var where = function(ws) { return ws === null || workspaceId(ws) === r.current ? "on screen" : "on workspace " + ws }
 
   if (action.type === "focus") {
     var hit = find(action.ws, action.letter)
     return hit ? { kind: "focus", hint: hit } : { error: "No window " + action.letter + " " + where(action.ws) }
   }
-  if (action.type === "workspace") return { kind: "workspace", ws: action.ws }
+  if (action.type === "workspace") return { kind: "workspace", ws: r.perMonitor ? workspaceName(action.ws) : action.ws, perMonitor: !!r.perMonitor }
   if (action.type === "resize") {
     var win = find(null, action.letter)
     if (!win) return { error: "No window " + action.letter + " on screen" }
@@ -250,7 +319,7 @@ function resolveCommand(action, r) {
       if (!slot) return { error: "No window " + action.slot + " " + where(action.to) }
       if (slot.address === win.address) return { error: "That's the same window" }
     }
-    return { kind: "move", window: win, to: action.to, slot: slot, focus: action.to === r.current }
+    return { kind: "move", window: win, to: r.perMonitor ? workspaceName(action.to) : action.to, slot: slot, focus: workspaceId(action.to) === r.current, perMonitor: !!r.perMonitor }
   }
   return { error: "Unknown command" }
 }
@@ -269,8 +338,18 @@ function jumpScript(maximize, fullscreen) {
   return script
 }
 
-// Switches to workspace "$1".
-function workspaceScript() {
+// Quote a workspace name as a Lua literal, passed as an argv value to sh.
+function luaString(value) {
+  return '"' + String(value).replace(/[\\"\x00-\x1f\x7f]/g, function(c) {
+    return c === '"' || c === "\\" ? "\\" + c : "\\" + ("00" + c.charCodeAt(0)).slice(-3)
+  }) + '"'
+}
+
+// Switches to workspace "$1"; per-monitor mode takes a quoted Lua name.
+function workspaceScript(perMonitor) {
+  if (perMonitor)
+    return 'hyprctl dispatch "function() local p = per_monitor_workspaces; local n = $1; hl.dispatch(hl.dsp.focus({ workspace = p and p.selector(n) or (\\"name:\\" .. n) })) end"'
+
   return 'hyprctl dispatch "hl.dsp.focus({ workspace = \\"$1\\" })" >/dev/null 2>&1 || hyprctl dispatch workspace "$1"'
 }
 
@@ -285,7 +364,12 @@ function resizeScript() {
 
 // Moves window "$1" to workspace "$2" without following it, swaps it into the
 // spot of window "$3" when given, and focuses it when "$4" is 1.
-function moveScript() {
+function moveScript(perMonitor) {
+  if (perMonitor)
+    return 'hyprctl dispatch "function() local p = per_monitor_workspaces; local n = $2; hl.dispatch(hl.dsp.window.move({ workspace = p and p.selector(n) or (\\"name:\\" .. n), follow = false, window = \\"$1\\" })) end"'
+      + '; if [ -n "$3" ]; then hyprctl dispatch "hl.dsp.window.swap({ window = \\"$1\\", target = \\"$3\\" })"; fi'
+      + '; if [ "$4" = 1 ]; then hyprctl dispatch "hl.dsp.focus({ window = \\"$1\\" })"; fi'
+
   return 'hyprctl dispatch "hl.dsp.window.move({ workspace = \\"$2\\", follow = false, window = \\"$1\\" })" >/dev/null 2>&1'
     + ' || hyprctl dispatch movetoworkspacesilent "$2,$1"'
     + '; if [ -n "$3" ]; then hyprctl dispatch "hl.dsp.window.swap({ window = \\"$1\\", target = \\"$3\\" })" >/dev/null 2>&1; fi'

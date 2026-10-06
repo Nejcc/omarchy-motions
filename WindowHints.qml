@@ -62,7 +62,7 @@ Item {
   }
 
   function build(clientsJson, monitorsJson) {
-    var r = Logic.buildHints(clientsJson, monitorsJson)
+    var r = Logic.buildHints(clientsJson, monitorsJson, Logic.perMonitorSettings(shellConfig.text()), workspaceOut.text)
     if (!r) return root.dismiss()
     root.result = r
     root.hints = r.hints
@@ -94,9 +94,9 @@ Item {
     if (r.kind === "focus")
       // Shift + letter, or opening with {"maximize": true}, also makes it full width.
       return root.run(Logic.jumpScript(root.maximize || shift, r.hint.fullscreen), [addr(r.hint)])
-    if (r.kind === "workspace") return root.run(Logic.workspaceScript(), [String(r.ws)])
+    if (r.kind === "workspace") return root.run(Logic.workspaceScript(r.perMonitor), [r.perMonitor ? Logic.luaString(r.ws) : String(r.ws)])
     if (r.kind === "move")
-      return root.run(Logic.moveScript(), [addr(r.window), String(r.to), r.slot ? addr(r.slot) : "", r.focus ? "1" : "0"])
+      return root.run(Logic.moveScript(r.perMonitor), [addr(r.window), r.perMonitor ? Logic.luaString(r.to) : String(r.to), r.slot ? addr(r.slot) : "", r.focus ? "1" : "0"])
     if (r.kind === "resize") {
       if (r.cols === 12) return root.run(Logic.jumpScript(true, r.window.fullscreen), [addr(r.window)])
       var w = Logic.columnWidth(r.cols, { screenW: root.screenW, gapsOut: Style.gapsOut, gapsIn: root.gapsIn, border: root.borderSize })
@@ -140,7 +140,20 @@ Item {
   Process {
     id: clients
     command: ["hyprctl", "clients", "-j"]
-    stdout: StdioCollector { id: clientsOut; onStreamFinished: monitors.running = true }
+    stdout: StdioCollector { id: clientsOut; onStreamFinished: workspaceQuery.running = true }
+  }
+
+  FileView {
+    id: shellConfig
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    onFileChanged: reload()
+  }
+
+  Process {
+    id: workspaceQuery
+    command: ["hyprctl", "workspaces", "-j"]
+    stdout: StdioCollector { id: workspaceOut; onStreamFinished: monitors.running = true }
   }
 
   Process {
@@ -152,6 +165,7 @@ Item {
   PanelWindow {
     id: panel
     visible: root.opened
+    screen: Quickshell.screens.find(function(s) { return root.result && s.name === root.result.monitorName }) || null
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "nejcc.motions"

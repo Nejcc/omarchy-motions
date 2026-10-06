@@ -468,3 +468,69 @@ test("jumpScript: a hostile window address can't run commands", () => {
     assert.equal(pwned, false, evil)
   }
 })
+
+test("per-monitor: detects enabled widget settings, ignores installed/disabled plugins", () => {
+  const id = "mmsbrggr.per-monitor-workspaces"
+  assert.equal(L.perMonitorSettings('{}'), null)
+  const config = { bar: { layout: { left: [{ id, count: 8 }] } } }
+  assert.equal(L.perMonitorSettings(JSON.stringify(config)).count, 8)
+  config.disabledPlugins = [id]
+  assert.equal(L.perMonitorSettings(JSON.stringify(config)), null)
+})
+
+test("per-monitor: commands resolve local slots, guests and empty workspaces", () => {
+  const key = 'Display: model'
+  const m = monitor({ description: key, activeWorkspace: { id: 201, name: key + ':1' } })
+  const a = win(201, [0, 0], { workspace: { id: 201, name: key + ':1' } })
+  const b = win(202, [0, 0], { workspace: { id: 202, name: key + ':2' } })
+  const guest = win(301, [0, 0], { workspace: { id: 301, name: key + ':6#3.1' } })
+  const other = win(101, [0, 0], { workspace: { id: 101, name: 'Other:1' }, monitor: 1 })
+  const monitors = [m, monitor({ id: 1, name: 'HDMI-A-1', focused: false, activeWorkspace: { id: 101, name: 'Other:1' } })]
+  const r = L.buildHints(JSON.stringify([a, b, guest, other]), JSON.stringify(monitors), { count: 5 }, JSON.stringify([{ id: 204, name: key + ':4' }]))
+  assert.deepEqual(plain(r.workspaces.slice(0, 6).map(w => [w.name, w.digit])), [['1','1'],['2','2'],['3','3'],['4','4'],['5','5'],['6','6']])
+  assert.equal(r.workspaces.find(w => w.id === 101).digit, '')
+  const resolve = command => L.resolveCommand(L.parseCommand(command).action, r)
+  assert.equal(resolve('2a').hint.address, b.address)
+  assert.equal(resolve('1a').hint.address, a.address)
+  assert.equal(resolve('6a').hint.address, guest.address)
+  assert.equal(resolve('4\n').ws, key + ':4')
+  assert.equal(resolve('3\n').ws, key + ':3')
+  assert.equal(resolve('6\n').ws, key + ':6#3.1')
+  assert.equal(resolve('m21\n').focus, true)
+  assert.equal(resolve('m23\n').to, key + ':3')
+  assert.match(resolve('7\n').error, /No workspace slot 7/)
+  assert.equal(r.monitorName, 'eDP-1')
+})
+
+test("per-monitor: identical displays use connector names", () => {
+  const monitors = [monitor({ description: 'Same' }), monitor({ id: 1, name: 'DP-1', description: 'Same' })]
+  assert.equal(L.monitorKey(monitors[0], monitors), 'Same@eDP-1')
+  assert.equal(L.monitorSlot('Same@eDP-1:2#3.1', 'Same@eDP-1'), 2)
+  assert.equal(L.monitorSlot('Same@DP-1:2', 'Same@eDP-1'), null)
+})
+
+test("per-monitor: dispatch Lua is valid and workspace names stay data", () => {
+  for (const name of ['Display:2', 'Screen "quoted" \\ path:3', '$(touch pwned):1', '`touch pwned`:1', 'line\ncontrol\u0001:2']) {
+    const literal = L.luaString(name)
+    const focus = runScript(L.workspaceScript(true), [literal])
+    const move = runScript(L.moveScript(true), ['address:0xa', literal, 'address:0xb', '1'])
+    assert.equal(focus.pwned, false)
+    assert.equal(move.pwned, false)
+    assert.equal(focus.calls.length, 1)
+    assert.equal(move.calls.length, 3)
+    // Exercise the same Lua expression protocol as Hyprland's dispatcher.
+    for (const call of [focus.calls[0], move.calls[0]]) {
+      const code = call.slice('dispatch '.length)
+      const lua = spawnSync('lua', ['-e', `
+local captured
+per_monitor_workspaces = { selector = function(n) captured = n; return "202" end }
+hl = { dispatch = function() end, dsp = { focus = function(v) return v end, window = { move = function(v) return v end } } }
+local f = assert(load(${L.luaString('return ' + code)}))()
+f()
+assert(captured == ${literal})
+`], { encoding: 'utf8', timeout: 3000 })
+      if (lua.error && lua.error.code === 'ENOENT') continue // Lua is optional in CI.
+      assert.equal(lua.status, 0, lua.stderr + '\n' + code)
+    }
+  }
+})
