@@ -86,6 +86,21 @@ function perMonitorSettings(configJson) {
 // workspace overview. Letters restart at "a" in every workspace; the windows
 // on screen share one run of letters. Returns null if hyprctl output is
 // unreadable.
+// Snapshot requests carry their generation in stdout, so an old process can
+// never reopen hints after a close or a newer request.
+function readSnapshot(text, generation) {
+  var newline = String(text).indexOf("\n")
+  if (newline < 0) return null
+  if (String(text).slice(0, newline) !== String(generation)) return { stale: true }
+  var parts = String(text).slice(newline + 1).split("\n__MOTIONS_SNAPSHOT__\n")
+  if (parts.length !== 3 || parts.some(function(p) { return !Array.isArray(parseJson(p, null)) })) return null
+  return { clients: parts[0], workspaces: parts[1], monitors: parts[2] }
+}
+
+function hintsInvalidatedBy(name) {
+  return /^(openwindow|closewindow|movewindow(v2)?|workspace(v2)?|focusedmon(v2)?|monitoradded(v2)?|monitorremoved|monitorlayout|renameworkspace|createworkspace(v2)?|destroyworkspace(v2)?|activespecial(v2)?|windowtitle(v2)?|changefloatingmode|fullscreen|togglegroup|moveintogroup|moveoutofgroup|configreloaded)$/.test(name)
+}
+
 function buildHints(clientsJson, monitorsJson, perMonitor, workspacesJson) {
   // Unreadable output means hyprctl failed: show nothing rather than a
   // misleading "everything is empty" overview.
@@ -97,6 +112,15 @@ function buildHints(clientsJson, monitorsJson, perMonitor, workspacesJson) {
 
   var focused = monitors.find(function(m) { return m && m.focused }) || monitors[0]
   var monitorById = function(id) { return monitors.find(function(m) { return m && m.id === id }) || focused }
+  var dimensions = function(m) {
+    var positive = function(value, fallback) { return Number.isFinite(value) && value > 0 ? value : fallback }
+    var width = positive(m.width, 1920), height = positive(m.height, 1080)
+    if ([1, 3, 5, 7].indexOf(m.transform) !== -1) {
+      var originalWidth = width; width = height; height = originalWidth
+    }
+    var scale = positive(m.scale, 1)
+    return { width: width / scale, height: height / scale }
+  }
   var current = focused.activeWorkspace && Number.isInteger(focused.activeWorkspace.id) ? focused.activeWorkspace.id : null
   // ponytail: in-place hints only on the focused monitor; one panel per screen if you add a second display.
   var visible = [current, focused.specialWorkspace && Number.isInteger(focused.specialWorkspace.id) && focused.specialWorkspace.id !== 0 ? focused.specialWorkspace.id : null]
@@ -125,15 +149,25 @@ function buildHints(clientsJson, monitorsJson, perMonitor, workspacesJson) {
     if (slot && Number.isInteger(w.id)) slots[slot] = { id: w.id, name: w.name }
   })
   var byWs = {}
+  var workspaceMonitor = function(id) {
+    var owner = monitors.find(function(m) {
+      return (m.activeWorkspace && m.activeWorkspace.id === id)
+        || (m.specialWorkspace && m.specialWorkspace.id === id && id !== 0)
+    })
+    if (owner) return owner
+    var workspace = workspaceList.find(function(w) { return w && w.id === id })
+    return workspace && (monitors.find(function(m) { return m.name === workspace.monitor || m.id === workspace.monitorID })) || focused
+  }
   var card = function(id, name) {
     var cardKey = "ws" + id
     if (!byWs[cardKey]) {
       var slot = perMonitor ? monitorSlot(name, key) : null
+      var size = dimensions(workspaceMonitor(id))
       byWs[cardKey] = {
         id: id, name: slot ? String(slot) : String(name || id).replace(/^special:?/, "S "),
         slot: slot,
         digit: perMonitor ? (slot && slot <= 10 ? String(slot % 10) : "") : (id >= 1 && id <= 10 ? String(id % 10) : ""),
-        current: visible.indexOf(id) !== -1, windows: []
+        current: visible.indexOf(id) !== -1, windows: [], screenW: size.width, screenH: size.height
       }
     }
     return byWs[cardKey]
@@ -172,7 +206,8 @@ function buildHints(clientsJson, monitorsJson, perMonitor, workspacesJson) {
     hints.push(h)
     if (here) inPlace.push(h)
     var ws = card(c.workspace.id, c.workspace.name)
-    // ponytail: mini-maps assume every workspace has the focused monitor's size.
+    var size = dimensions(monitorById(c.monitor))
+    ws.screenW = size.width; ws.screenH = size.height
     ws.windows.push(h)
     if (!here && others.indexOf(ws) === -1) others.push(ws)
   })
@@ -182,13 +217,10 @@ function buildHints(clientsJson, monitorsJson, perMonitor, workspacesJson) {
     if (perMonitor && (a.slot || b.slot)) return a.slot && b.slot ? a.slot - b.slot : a.slot ? -1 : 1
     return ((a.id < 0) - (b.id < 0)) || (a.id < 0 ? b.id - a.id : a.id - b.id)
   })
-  var positiveOr = function(v, fallback) { var n = numberOr(v, 0); return n > 0 ? n : fallback }
-  var scale = positiveOr(focused.scale, 1)
-  var width = positiveOr(focused.width, 1920)
-  var height = positiveOr(focused.height, 1080)
+  var size = dimensions(focused)
   return {
     hints: hints, inPlace: inPlace, others: others, workspaces: workspaces, current: current,
-    screenW: width / scale, screenH: height / scale,
+    screenW: size.width, screenH: size.height,
     monitorName: focused.name, perMonitor: perMonitor ? { key: key, slots: slots, count: perMonitor.count } : null
   }
 }

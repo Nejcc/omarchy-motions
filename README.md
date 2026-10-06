@@ -136,6 +136,10 @@ FUZZ_ROUNDS=200000 node --test tests/fuzz.test.mjs   # long fuzz run
 the logic (broken `hyprctl` output, random key sequences, corrupt settings) and
 checks invariants. It runs with the unit tests.
 
+Packaging checks validate the manifest, entrypoints and JavaScript syntax.
+With Qt tools installed, they also parse QML; CI installs these tools. Lifecycle
+checks exercise the real overlay methods against delayed query completions.
+
 The unit tests cover letter assignment, the workspace overview, multiple
 monitors, display scaling, broken `hyprctl` output and the whole command
 language: every key sequence up to five keys is checked to be pending, done or
@@ -151,7 +155,9 @@ it with quick open/close cycles.
 - Up to 24 windows per workspace get a letter.
 - Resizing works on windows on screen.
 - On-screen hints are drawn on the focused monitor only.
-- Mini-maps are drawn at the focused monitor's aspect ratio.
+- Hints dismiss on window, workspace or monitor changes so commands cannot use
+  a stale snapshot. Reopen the panel to continue with the current labels.
+- Mini-maps use each workspace's monitor dimensions, rotation and scale.
 - For a few seconds right after login or a shell restart, the key may do
   nothing while the Omarchy shell loads its plugins. This affects every shell
   plugin, not just this one.
@@ -169,3 +175,10 @@ move. It suggests `SUPER + ;` and `SUPER + '` when you have several windows open
 ## License
 
 MIT
+
+## Releases
+
+After merging the prepared changes, run `scripts/release.sh` from a clean
+checkout. It checks the merged tree, runs offline tests, creates the manifest
+version tag and a GitHub release from `CHANGELOG.md`, then closes the release
+tracking issue. Git SSH access and an authenticated `gh` are required.
