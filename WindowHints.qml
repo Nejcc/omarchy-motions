@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import Quickshell.Wayland
 import QtQuick
 import qs.Commons
@@ -14,6 +15,9 @@ Item {
   property var shell: null
   property var manifest: null
   property bool opened: false
+  property bool requested: false
+  property bool loading: false
+  property int generation: 0
   property var hints: []    // every labeled window: { key, address, cls, fullscreen, x, y, w, h }
   property bool maximize: false  // also make the target full width (SUPER + ALT + F) after focusing
   property var inPlace: []  // hints drawn over windows on screen
@@ -40,29 +44,46 @@ Item {
   readonly property color accent: Color.menu.selectedText
 
   function open(payloadJson) {
+    root.generation++
+    root.requested = true
+    root.opened = false
     root.maximize = Logic.readPayload(payloadJson).maximize
     root.command = ""
     root.commandError = ""
-    clients.running = true
+    if (root.loading) snapshot.running = false
+    else root.startQuery()
   }
 
   function close() {
+    root.requested = false
+    root.generation++
     root.opened = false
+    snapshot.running = false
+  }
+
+  function startQuery() {
+    root.loading = true
+    snapshot.generation = root.generation
+    snapshot.running = true
   }
 
   function dismiss() {
-    root.opened = false
+    root.close()
     if (root.shell && typeof root.shell.hide === "function")
       root.shell.hide((root.manifest && root.manifest.id) || "nejcc.motions")
   }
 
   function toggle() {
-    if (root.opened) root.dismiss()
+    if (root.requested) root.dismiss()
     else root.open("{}")
   }
 
-  function build(clientsJson, monitorsJson) {
-    var r = Logic.buildHints(clientsJson, monitorsJson, Logic.perMonitorSettings(shellConfig.text()), workspaceOut.text)
+  function build(text) {
+    if (!root.requested) return
+    var data = Logic.readSnapshot(text, root.generation)
+    if (data && data.stale) return
+    if (!data) return root.dismiss()
+    var r = Logic.buildHints(data.clients, data.monitors, Logic.perMonitorSettings(shellConfig.text()), data.workspaces)
     if (!r) return root.dismiss()
     root.result = r
     root.hints = r.hints
@@ -71,7 +92,7 @@ Item {
     root.screenW = r.screenW
     root.screenH = r.screenH
     root.opened = true
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() { if (root.opened) keyCatcher.forceActiveFocus() })
   }
 
   function run(script, args) {
@@ -137,10 +158,11 @@ Item {
     }
   }
 
-  Process {
-    id: clients
-    command: ["hyprctl", "clients", "-j"]
-    stdout: StdioCollector { id: clientsOut; onStreamFinished: workspaceQuery.running = true }
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      if (root.requested && event && Logic.hintsInvalidatedBy(String(event.name))) root.dismiss()
+    }
   }
 
   FileView {
@@ -151,15 +173,15 @@ Item {
   }
 
   Process {
-    id: workspaceQuery
-    command: ["hyprctl", "workspaces", "-j"]
-    stdout: StdioCollector { id: workspaceOut; onStreamFinished: monitors.running = true }
-  }
-
-  Process {
-    id: monitors
-    command: ["hyprctl", "monitors", "-j"]
-    stdout: StdioCollector { onStreamFinished: root.build(clientsOut.text, text) }
+    id: snapshot
+    property int generation: 0
+    command: ["sh", "-c", "printf '%s\\n' \"$1\"; hyprctl clients -j && printf '\\n__MOTIONS_SNAPSHOT__\\n' && hyprctl workspaces -j && printf '\\n__MOTIONS_SNAPSHOT__\\n' && hyprctl monitors -j", "sh", String(generation)]
+    stdout: StdioCollector { onStreamFinished: root.build(text) }
+    onExited: function(code) {
+      root.loading = false
+      if (root.requested && snapshot.generation !== root.generation) root.startQuery()
+      else if (root.requested && code !== 0) root.dismiss()
+    }
   }
 
   PanelWindow {

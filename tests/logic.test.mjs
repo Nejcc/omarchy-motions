@@ -28,6 +28,18 @@ const build = (clients, monitors = [monitor()]) => L.buildHints(JSON.stringify(c
 
 // --------------------------------------------------------------- buildHints
 
+test("snapshot: stale requests cannot reopen hints and failed queries are rejected", () => {
+  const text = '4\n[]\n__MOTIONS_SNAPSHOT__\n[]\n__MOTIONS_SNAPSHOT__\n[]'
+  assert.deepEqual(plain(L.readSnapshot(text, 5)), { stale: true })
+  assert.ok(L.readSnapshot(text, 4).clients)
+  assert.equal(L.readSnapshot('4\n[]', 4), null)
+  assert.equal(L.readSnapshot(text.replace(/\[\]$/, '{}'), 4), null)
+  for (const event of ['openwindow', 'closewindow', 'movewindowv2', 'workspacev2', 'monitorremoved', 'monitoraddedv2', 'renameworkspace'])
+    assert.equal(L.hintsInvalidatedBy(event), true)
+  assert.equal(L.hintsInvalidatedBy('activewindowv2'), false)
+  assert.equal(L.hintsInvalidatedBy('unknown'), false)
+})
+
 test("buildHints: previews use their own monitor's logical dimensions", () => {
   const left = monitor()
   const right = monitor({ id: 1, name: 'DP-1', x: -1280, y: -100,

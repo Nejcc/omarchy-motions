@@ -20,5 +20,5 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       # Name the files: Node 22 reads a bare "tests/" as a file, not a folder.
-      - run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - run: sudo apt-get update && sudo apt-get install -y lua5.4 qt6-declarative-dev-tools
       - run: node --test tests/*.test.mjs

@@ -86,6 +86,21 @@ function perMonitorSettings(configJson) {
 // workspace overview. Letters restart at "a" in every workspace; the windows
 // on screen share one run of letters. Returns null if hyprctl output is
 // unreadable.
+// Snapshot requests carry their generation in stdout, so an old process can
+// never reopen hints after a close or a newer request.
+function readSnapshot(text, generation) {
+  var newline = String(text).indexOf("\n")
+  if (newline < 0) return null
+  if (String(text).slice(0, newline) !== String(generation)) return { stale: true }
+  var parts = String(text).slice(newline + 1).split("\n__MOTIONS_SNAPSHOT__\n")
+  if (parts.length !== 3 || parts.some(function(p) { return !Array.isArray(parseJson(p, null)) })) return null
+  return { clients: parts[0], workspaces: parts[1], monitors: parts[2] }
+}
+
+function hintsInvalidatedBy(name) {
+  return /^(openwindow|closewindow|movewindow(v2)?|workspace(v2)?|focusedmon(v2)?|monitoradded(v2)?|monitorremoved|monitorlayout|renameworkspace|createworkspace(v2)?|destroyworkspace(v2)?|activespecial(v2)?|windowtitle(v2)?|changefloatingmode|fullscreen|togglegroup|moveintogroup|moveoutofgroup|configreloaded)$/.test(name)
+}
+
 function buildHints(clientsJson, monitorsJson, perMonitor, workspacesJson) {
   // Unreadable output means hyprctl failed: show nothing rather than a
   // misleading "everything is empty" overview.
