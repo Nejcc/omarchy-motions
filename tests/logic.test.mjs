@@ -534,3 +534,29 @@ assert(captured == ${literal})
     }
   }
 })
+
+test("per-monitor: optional API, legacy provider and standalone dispatch", () => {
+  const name = 'Display:3'
+  for (const provider of [
+    '{ integration = { version = 1, resolve_workspace = function(n) assert(n == "Display:3"); return "303" end } }',
+    '{ selector = function(n) assert(n == "Display:3"); return "303" end }',
+    '{ integration = { version = 99 }, selector = function() return "303" end }',
+    'nil'
+  ]) {
+    for (const call of [
+      runScript(L.workspaceScript(true), [L.luaString(name)]).calls[0],
+      runScript(L.moveScript(true), ['address:0xa', L.luaString(name), '', '0']).calls[0]
+    ]) {
+      const code = call.slice('dispatch '.length)
+      const expected = provider === 'nil' ? 'name:Display:3' : '303'
+      const lua = spawnSync('lua', ['-e', `
+per_monitor_workspaces = ${provider}
+hl = { dispatch = function(v) assert(v.workspace == ${L.luaString(expected)}) end,
+  dsp = { focus = function(v) return v end, window = { move = function(v) return v end } } }
+assert(load(${L.luaString('return ' + code)}))()()
+`], { encoding: 'utf8', timeout: 3000 })
+      if (lua.error && lua.error.code === 'ENOENT') continue
+      assert.equal(lua.status, 0, lua.stderr)
+    }
+  }
+})
